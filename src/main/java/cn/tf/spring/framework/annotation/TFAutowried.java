@@ -1,4 +1,4 @@
-package cn.tf.spring.annotation;
+package cn.tf.spring.framework.annotation;
 
 import java.lang.annotation.*;
 

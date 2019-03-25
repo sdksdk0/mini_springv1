@@ -1,9 +1,9 @@
-package cn.tf.spring.servlet;
+package cn.tf.spring.framework.servlet.v1;
 
-import cn.tf.spring.annotation.TFAutowried;
-import cn.tf.spring.annotation.TFController;
-import cn.tf.spring.annotation.TFRequestMapping;
-import cn.tf.spring.annotation.TFService;
+import cn.tf.spring.framework.annotation.TFAutowried;
+import cn.tf.spring.framework.annotation.TFController;
+import cn.tf.spring.framework.annotation.TFRequestMapping;
+import cn.tf.spring.framework.annotation.TFService;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -17,10 +17,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class TFDispatchServlet extends HttpServlet {
@@ -54,15 +51,16 @@ public class TFDispatchServlet extends HttpServlet {
             Class<?> clazz = entry.getValue().getClass();
             if(!clazz.isAnnotationPresent(TFController.class)){continue;}
             String baseUrl = "";
-            if(clazz.isAnnotationPresent(TFController.class)){
+            if(clazz.isAnnotationPresent(TFRequestMapping.class)){
                TFRequestMapping requestMapping = clazz.getAnnotation((TFRequestMapping.class));
                baseUrl = requestMapping.value();
             }
 
             for (Method method : clazz.getMethods()){
-                if(!method.isAnnotationPresent(TFController.class)){continue;}
+                if(!method.isAnnotationPresent(TFRequestMapping.class)){continue;}
                 TFRequestMapping requestMapping = method.getAnnotation(TFRequestMapping.class);
-                String url = (baseUrl+"/"+requestMapping.value());
+                String url = ("/" + baseUrl + "/" + requestMapping.value())
+                        .replaceAll("/+","/");
                 handlerMapping.put(url,method);
                 System.out.println("Method:"+url+","+method);
             }
@@ -99,7 +97,7 @@ public class TFDispatchServlet extends HttpServlet {
                 if(clazz.isAnnotationPresent(TFController.class)){
                     Object instance = clazz.newInstance();
 
-                    String beanName = clazz.getSimpleName();
+                    String beanName = lowerFirstCase(clazz.getSimpleName());
                     ioc.put(beanName,instance);
 
                 }else if(clazz.isAnnotationPresent(TFService.class)){
@@ -120,6 +118,8 @@ public class TFDispatchServlet extends HttpServlet {
                         }
                         ioc.put(i.getName(),instance);
                     }
+                }else{
+                    continue;
                 }
             }
         }catch (Exception e){
@@ -167,15 +167,13 @@ public class TFDispatchServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        //6、调用post
+        //6、调用
         try{
             doDispatch(req,resp);
         }catch (Exception e){
             e.printStackTrace();
-            resp.getWriter().write("500");
+            resp.getWriter().write("500"+ Arrays.toString(e.getStackTrace()));
         }
-
-
     }
 
     private void doDispatch(HttpServletRequest req, HttpServletResponse resp) throws IOException, InvocationTargetException, IllegalAccessException {
@@ -187,7 +185,7 @@ public class TFDispatchServlet extends HttpServlet {
             return;
         }
         Method method = this.handlerMapping.get(url);
-        String beanName = method.getDeclaringClass().getSimpleName();
+         String beanName  = lowerFirstCase( method.getDeclaringClass().getSimpleName());
         Map<String,String[]> params = req.getParameterMap();
         method.invoke(ioc.get(beanName),new Object[]{req,resp,params.get("name")[0]});
 

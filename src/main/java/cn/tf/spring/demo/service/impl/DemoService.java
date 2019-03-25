@@ -1,7 +1,7 @@
 package cn.tf.spring.demo.service.impl;
 
 
-import cn.tf.spring.annotation.TFService;
+import cn.tf.spring.framework.annotation.TFService;
 import cn.tf.spring.demo.service.IDemoService;
 
 @TFService

@@ -1,9 +1,9 @@
 package cn.tf.spring.demo.action;
 
 
-import cn.tf.spring.annotation.TFAutowried;
-import cn.tf.spring.annotation.TFController;
-import cn.tf.spring.annotation.TFRequestMapping;
+import cn.tf.spring.framework.annotation.TFAutowried;
+import cn.tf.spring.framework.annotation.TFController;
+import cn.tf.spring.framework.annotation.TFRequestMapping;
 import cn.tf.spring.demo.service.IDemoService;
 
 @TFController
