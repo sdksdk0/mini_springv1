@@ -1,4 +1,4 @@
-package cn.tf.spring.framework.servlet.v1;
+package cn.tf.spring.framework.v2;
 
 import cn.tf.spring.framework.annotation.*;
 
@@ -17,13 +17,15 @@ import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class TFDispatchServlet extends HttpServlet {
 
     private Properties contextConfig = new Properties();
     private Map<String,Object> ioc = new ConcurrentHashMap<String,Object>();
     private List<String> classNames = new ArrayList<String>();
-    private Map<String,Method> handlerMapping = new ConcurrentHashMap<String,Method>();
+    private List<Handler> handlerMapping = new ArrayList<Handler>();
 
     @Override
     public void init(ServletConfig config) throws ServletException {
@@ -57,10 +59,10 @@ public class TFDispatchServlet extends HttpServlet {
             for (Method method : clazz.getMethods()){
                 if(!method.isAnnotationPresent(TFRequestMapping.class)){continue;}
                 TFRequestMapping requestMapping = method.getAnnotation(TFRequestMapping.class);
-                String url = ("/" + baseUrl + "/" + requestMapping.value())
-                        .replaceAll("/+","/");
-                handlerMapping.put(url,method);
-                System.out.println("Method:"+url+","+method);
+                String regex = ("/" + baseUrl + requestMapping.value()).replaceAll("/+", "/");
+                Pattern pattern = Pattern.compile(regex);
+                handlerMapping.add(new Handler(pattern,entry.getValue(),method));
+                System.out.println("mapping " + regex + "," + method);
             }
         }
     }
@@ -175,59 +177,53 @@ public class TFDispatchServlet extends HttpServlet {
     }
 
     private void doDispatch(HttpServletRequest req, HttpServletResponse resp) throws IOException, InvocationTargetException, IllegalAccessException {
-        String url = req.getRequestURI();
-        String contextPath = req.getContextPath();
-        url = url.replaceAll(contextPath,"").replaceAll("/+","/");
-        if(!this.handlerMapping.containsKey(url)){
-            resp.getWriter().write("404 Not Found!!!");
-            return;
-        }
-        Method method = this.handlerMapping.get(url);
-        String beanName  = lowerFirstCase( method.getDeclaringClass().getSimpleName());
-        Map<String,String[]> params = req.getParameterMap();
+        try {
+            Handler handler = getHandler(req);
+            if(handler == null){
+                resp.getWriter().write("404 Not Found");
+                return;
+            }
+            Class<?> [] paramTypes = handler.getParamTypes();
+            Object[] paramValues = new Object[paramTypes.length];
+            Map<String,String[]> params = new HashMap<String, String[]>();
+            for(Map.Entry<String,String[]> parm:params.entrySet()){
 
-        Class<?>[] paramterTypes = method.getParameterTypes();
-
-        Object[] paramValues = new Object[paramterTypes.length];
-        for(int i=0;i<paramterTypes.length;i++){
-            Class paramterType = paramterTypes[i];
-            //paramterType是行参
-            if( HttpServletRequest.class == paramterType){
-                paramValues[i] = req;
-                continue;
-            }else if(HttpServletResponse.class == paramterType ){
-                paramValues[i] = resp;
-                continue;
             }
 
 
 
-                Annotation[][] pa = method.getParameterAnnotations();
-                for(int j=0;j<pa.length;j++){
-                    for(Annotation a:pa[j]){
-                        if(a instanceof  TFRequestParam){
-                            String paramName = ((TFRequestParam) a).value();
-                            if(params.containsKey(paramName)){
-                                for(Map.Entry<String,String[]> param : params.entrySet()){
 
-                                    String  value =  Arrays.toString(params.get(paramName))
-                                            .replaceAll("\\[|\\]","")
-                                            .replaceAll("\\s",",");
-                                    paramValues[i] = convert(paramterType,value);
-                                }
-                            }
-                        }
-                    }
-                }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        method.invoke(ioc.get(beanName),paramValues);
 
+    }
+
+    private Handler getHandler(HttpServletRequest req) throws Exception{
+        if(handlerMapping.isEmpty()){ return null; }
+
+        String url = req.getRequestURI();
+        String contextPath = req.getContextPath();
+        url = url.replace(contextPath, "").replaceAll("/+", "/");
+
+        for (Handler handler : handlerMapping) {
+            try{
+                Matcher matcher = handler.pattern.matcher(url);
+                //如果没有匹配上继续下一个匹配
+                if(!matcher.matches()){ continue; }
+
+                return handler;
+            }catch(Exception e){
+                throw e;
+            }
+        }
+        return null;
     }
 
     private Object convert(Class<?> type,String value){
         //多个参数类型的可以用策略模式
         if(Double.class == type){
-            return Double.parseDouble(value);
+            return Double.valueOf(value);
         }else if(Integer.class == type){
             return Integer.valueOf(value);
         }
@@ -239,5 +235,70 @@ public class TFDispatchServlet extends HttpServlet {
         chars[0] += 32;
         return String.valueOf(chars);
     }
+
+    //保存了一个url和method一一对应的关系
+    public class Handler{
+        private Object controller;
+        private Method method;
+        protected Pattern pattern;
+        //参数的名字作为key
+        protected Map<String,Integer> paramIndexMapping;	//参数顺序
+
+        /**
+         * 构造一个Handler基本的参数
+         * @param controller
+         * @param method
+         */
+        protected Handler(Pattern pattern, Object controller, Method method){
+            this.controller = controller;
+            this.method = method;
+            this.pattern = pattern;
+
+            paramIndexMapping = new HashMap<String,Integer>();
+            putParamIndexMapping(method);
+        }
+
+        private void putParamIndexMapping(Method method){
+            //提取方法中加了注解的参数
+            Annotation [] [] pa = method.getParameterAnnotations();
+            for (int i = 0; i < pa.length ; i ++) {
+                for(Annotation a : pa[i]){
+                    if(a instanceof TFRequestParam){
+                        String paramName = ((TFRequestParam) a).value();
+                        if(!"".equals(paramName.trim())){
+                            paramIndexMapping.put(paramName, i);
+                        }
+                    }
+                }
+            }
+
+            //提取方法中的request和response参数
+            Class<?> [] paramsTypes = method.getParameterTypes();
+            for (int i = 0; i < paramsTypes.length ; i ++) {
+                Class<?> type = paramsTypes[i];
+                if(type == HttpServletRequest.class ||
+                        type == HttpServletResponse.class){
+                    paramIndexMapping.put(type.getName(),i);
+                }
+            }
+        }
+
+        public Object getController() {
+            return controller;
+        }
+
+        public Method getMethod() {
+            return method;
+        }
+
+        public Pattern getPattern() {
+            return pattern;
+        }
+
+        public Map<String, Integer> getParamIndexMapping() {
+            return paramIndexMapping;
+        }
+    }
+
 
 }

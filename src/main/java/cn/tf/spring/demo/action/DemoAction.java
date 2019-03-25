@@ -31,6 +31,17 @@ public class DemoAction {
 			e.printStackTrace();
 		}
 	}
+
+
+	@TFRequestMapping("/add")
+	public void add(HttpServletRequest req, HttpServletResponse resp,
+					@TFRequestParam("a") Integer a, @TFRequestParam("b") Integer b){
+		try {
+			resp.getWriter().write(a + "+" + b + "=" + (a + b));
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
 	
 	@TFRequestMapping("/edit.json")
 	public void edit(HttpServletRequest req,HttpServletResponse resp,Integer id){
