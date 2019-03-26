@@ -2,6 +2,10 @@ package cn.tf.spring.framework.v2;
 
 import cn.tf.spring.framework.annotation.*;
 
+import java.lang.reflect.InvocationTargetException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
@@ -12,13 +16,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class TFDispatchServlet extends HttpServlet {
 
@@ -67,6 +67,7 @@ public class TFDispatchServlet extends HttpServlet {
         }
     }
 
+    //自动依赖注入
     private void doAutowired() {
         if(ioc.isEmpty()){return;}
         for(Map.Entry<String,Object> entry : ioc.entrySet()){
@@ -129,9 +130,7 @@ public class TFDispatchServlet extends HttpServlet {
 
     private void doScanner(String packageName) {
         URL url = this.getClass().getClassLoader().getResource("/" + packageName.replaceAll("\\.","/"));
-
         File classDir = new File(url.getFile());
-
         for (File file : classDir.listFiles()){
             if(file.isDirectory()){
                 doScanner(packageName + "." +file.getName());
@@ -139,8 +138,6 @@ public class TFDispatchServlet extends HttpServlet {
                 classNames.add(packageName + "." + file.getName().replace(".class",""));
             }
         }
-
-
     }
 
     private void doLoadConfig(String config) {
@@ -162,7 +159,7 @@ public class TFDispatchServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        doPost(req, resp);
+        this.doPost(req, resp);
     }
 
     @Override
@@ -183,15 +180,31 @@ public class TFDispatchServlet extends HttpServlet {
                 resp.getWriter().write("404 Not Found");
                 return;
             }
-            Class<?> [] paramTypes = handler.getParamTypes();
+            Class<?>[] paramTypes = handler.getParamTypes();
             Object[] paramValues = new Object[paramTypes.length];
-            Map<String,String[]> params = new HashMap<String, String[]>();
-            for(Map.Entry<String,String[]> parm:params.entrySet()){
-
+            Map<String,String[]> params = req.getParameterMap();
+            //循环请求中的参数
+            for(Map.Entry<String,String[]> param:params.entrySet()){
+                String value = Arrays.toString(param.getValue()).replaceAll("\\[|\\]","")
+                        .replaceAll("\\s",",");
+                if(!handler.paramIndexMapping.containsKey((param.getKey()))){continue;};
+                int index = handler.paramIndexMapping.get(param.getKey());
+                paramValues[index] = convert(paramTypes[index],value);
             }
 
-
-
+            if(handler.paramIndexMapping.containsKey(HttpServletRequest.class.getName())){
+                int reqIndex = handler.paramIndexMapping.get(HttpServletRequest.class.getName());
+                paramValues[reqIndex] = req;
+            }
+            if(handler.paramIndexMapping.containsKey(HttpServletResponse.class.getName())){
+                int respIndex = handler.paramIndexMapping.get(HttpServletResponse.class.getName());
+                paramValues[respIndex] = resp;
+            }
+            System.out.println(handler.controller);
+            System.out.println(paramValues.toString());
+            Object returnValue = handler.method.invoke(handler.controller,paramValues);
+            if(null == returnValue || returnValue instanceof  Void){return ;}
+            resp.getWriter().write(returnValue.toString());
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -206,12 +219,11 @@ public class TFDispatchServlet extends HttpServlet {
         String contextPath = req.getContextPath();
         url = url.replace(contextPath, "").replaceAll("/+", "/");
 
-        for (Handler handler : handlerMapping) {
+        for (Handler handler : this.handlerMapping) {
             try{
-                Matcher matcher = handler.pattern.matcher(url);
+                Matcher matcher = handler.getPattern().matcher(url);
                 //如果没有匹配上继续下一个匹配
                 if(!matcher.matches()){ continue; }
-
                 return handler;
             }catch(Exception e){
                 throw e;
@@ -243,17 +255,18 @@ public class TFDispatchServlet extends HttpServlet {
         protected Pattern pattern;
         //参数的名字作为key
         protected Map<String,Integer> paramIndexMapping;	//参数顺序
+        private Class<?> [] paramTypes;
 
         /**
          * 构造一个Handler基本的参数
          * @param controller
          * @param method
          */
-        protected Handler(Pattern pattern, Object controller, Method method){
+        public Handler(Pattern pattern, Object controller, Method method){
             this.controller = controller;
             this.method = method;
             this.pattern = pattern;
-
+            paramTypes = method.getParameterTypes();
             paramIndexMapping = new HashMap<String,Integer>();
             putParamIndexMapping(method);
         }
@@ -297,6 +310,10 @@ public class TFDispatchServlet extends HttpServlet {
 
         public Map<String, Integer> getParamIndexMapping() {
             return paramIndexMapping;
+        }
+
+        public Class<?>[] getParamTypes() {
+            return paramTypes;
         }
     }
 
