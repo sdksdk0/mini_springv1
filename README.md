@@ -14,3 +14,6 @@ IOC容器初始化流程图
 
 ![image](https://github.com/sdksdk0/mini_springv1/blob/master/IOC%E5%AE%B9%E5%99%A8%E5%88%9D%E5%A7%8B%E5%8C%96%E6%B5%81%E7%A8%8B%E5%9B%BE.jpg)
 
+DI注入流程图
+![image](https://github.com/sdksdk0/mini_springv1/blob/master/DI%E6%B3%A8%E5%85%A5%E6%B5%81%E7%A8%8B%E5%9B%BE.jpg)
+
